@@ -159,7 +159,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# --- PRECISE CSS: HIDE ONLY TOOLBAR BUTTONS WHILE KEEPING SIDEBAR TOGGLE SAFE ---
+# --- CLEAN CSS: HIDE UPPER-RIGHT TOOLBAR BUTTONS WHILE KEEPING MAIN MENU/FOOTER CLEAN ---
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
@@ -207,49 +207,68 @@ if not st.session_state["logged_in"]:
                 st.error("Invalid username or password. Please try again.")
 
 else:
-    st.title(
-        "💊 Pharmacy Inventory & Sales System (Cloud-Backed via Supabase)"
-    )
+    # --- PERSISTENT SIDEBAR TOGGLE STATE ---
+    if "sidebar_expanded" not in st.session_state:
+        st.session_state["sidebar_expanded"] = True
 
-    st.sidebar.markdown(f"👤 **Logged in as:** {st.session_state['name']}")
-    st.sidebar.markdown(f"🛡️ **Role:** `{st.session_state['role']}`")
+    # Header layout with a custom toggle button so the menu can always be brought back
+    header_col1, header_col2 = st.columns([0.05, 0.95])
+    with header_col1:
+        if st.button("📂", help="Toggle Sidebar Menu"):
+            st.session_state["sidebar_expanded"] = not st.session_state[
+                "sidebar_expanded"
+            ]
+            st.rerun()
 
-    if st.sidebar.button("Logout"):
-        log_audit(
-            "LOGOUT", f"User {st.session_state['username']} logged out."
+    with header_col2:
+        st.title(
+            "💊 Pharmacy Inventory & Sales System (Cloud-Backed via Supabase)"
         )
-        st.session_state["logged_in"] = False
-        st.session_state["username"] = ""
-        st.session_state["role"] = ""
-        st.session_state["name"] = ""
-        st.rerun()
 
-    st.sidebar.divider()
+    # Render sidebar based on session state control
+    if st.session_state["sidebar_expanded"]:
+        st.sidebar.markdown(f"👤 **Logged in as:** {st.session_state['name']}")
+        st.sidebar.markdown(f"🛡️ **Role:** `{st.session_state['role']}`")
 
-    role = st.session_state["role"]
+        if st.sidebar.button("Logout"):
+            log_audit(
+                "LOGOUT", f"User {st.session_state['username']} logged out."
+            )
+            st.session_state["logged_in"] = False
+            st.session_state["username"] = ""
+            st.session_state["role"] = ""
+            st.session_state["name"] = ""
+            st.rerun()
 
-    if role == "Administrator":
-        menu = [
-            "Dashboard",
-            "Inventory Management",
-            "POS / Record Sale",
-            "Deliveries",
-            "Sales History",
-            "User Management",
-            "Audit Trail Logs",
-        ]
-    elif role == "Management Viewer":
-        menu = ["Dashboard", "Sales History"]
-    elif role == "Cashier / Sales":
-        menu = ["POS / Record Sale", "Sales History"]
-    elif role == "Inventory Custodian":
-        menu = ["Dashboard", "Inventory Management"]
-    elif role == "Delivery Custodian":
-        menu = ["Deliveries"]
+        st.sidebar.divider()
+
+        role = st.session_state["role"]
+
+        if role == "Administrator":
+            menu = [
+                "Dashboard",
+                "Inventory Management",
+                "POS / Record Sale",
+                "Deliveries",
+                "Sales History",
+                "User Management",
+                "Audit Trail Logs",
+            ]
+        elif role == "Management Viewer":
+            menu = ["Dashboard", "Sales History"]
+        elif role == "Cashier / Sales":
+            menu = ["POS / Record Sale", "Sales History"]
+        elif role == "Inventory Custodian":
+            menu = ["Dashboard", "Inventory Management"]
+        elif role == "Delivery Custodian":
+            menu = ["Deliveries"]
+        else:
+            menu = []
+
+        choice = st.sidebar.selectbox("Navigation Menu", menu)
     else:
-        menu = []
-
-    choice = st.sidebar.selectbox("Navigation Menu", menu)
+        # Default fallback if sidebar is collapsed via our custom button
+        choice = "Dashboard"
 
 
     # --- FRAGMENT FOR DYNAMIC METRIC UPDATES ---
