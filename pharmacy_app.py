@@ -157,14 +157,19 @@ st.set_page_config(
     page_title="Pharmacy Inventory & Sales System", layout="wide"
 )
 
-# --- KEEP SIDEBAR TOGGLE VISIBLE & HIDE UNNECESSARY TOOLS ---
+# --- FORCE SIDEBAR COLLAPSE TOGGLE TO ALWAYS REMAIN VISIBLE ---
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
             [data-testid="stToolbar"] {display: none;}
             header {background: transparent;}
-            [data-testid="collapsedControl"] {display: block !important; visibility: visible !important; opacity: 1 !important;}
+            [data-testid="collapsedControl"] {
+                display: flex !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                z-index: 999999;
+            }
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
