@@ -159,12 +159,14 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# --- TARGETED CSS: HIDE UPPER-RIGHT TOOLBAR ONLY (KEEPS SIDEBAR TOGGLE SAFE) ---
+# --- SAFE CSS: HIDE ONLY MENU ITEMS BUT PRESERVE SIDEBAR TOGGLE ---
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
-            [data-testid="stToolbar"] {display: none !important;}
+            /* Hides top-right share/edit/github buttons without killing the sidebar toggle */
+            button[kind="header"] {display: none !important;}
+            .stAppToolbar {display: none !important;}
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
