@@ -3,12 +3,6 @@ import pandas as pd
 import psycopg2
 import streamlit as st
 
-# --- EMBEDDED LOGO DATA (MUNICIPALITY OF ISABEL, LEYTE) ---
-# Direct base64 data stream so hotlink blocking never breaks the image display
-LOGO_URL = "https://raw.githubusercontent.com/assets/isabel_logo.png"
-# Alternative reliable CDN link for local/cloud rendering
-STABLE_LOGO_URL = "https://i.ibb.co/L5Bq442/Isabel-Leyte.png"
-
 # --- SUPABASE POSTGRES CONNECTION WITH CONNECTION CACHING ---
 
 
@@ -161,7 +155,7 @@ init_db()
 # --- APP LAYOUT & CONFIG ---
 st.set_page_config(
     page_title="Pharmacy Inventory & Sales System",
-    page_icon="💊",
+    page_icon="logo.png",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -185,18 +179,10 @@ if "logged_in" not in st.session_state:
 if not st.session_state["logged_in"]:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # Display SVG rendering for clean crisp municipality badge
-        st.markdown(
-            """
-            <div style="text-align: center; margin-bottom: 10px;">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f3/Isabel_Leyte.png/240px-Isabel_Leyte.png" 
-                     width="150" 
-                     style="border-radius: 50%; box-shadow: 0px 4px 10px rgba(0,0,0,0.3);"
-                     onerror="this.onerror=null; this.src='https://i.postimg.cc/mD8N0Kpx/Isabel-Leyte.png';">
-            </div>
-        """,
-            unsafe_allow_html=True,
-        )
+        try:
+            st.image("logo.png", width=140)
+        except Exception:
+            pass
 
         st.title("🔐 Pharmacy System Login")
         st.markdown("Please sign in with your assigned staff credentials.")
@@ -230,18 +216,11 @@ if not st.session_state["logged_in"]:
                     st.error("Invalid username or password. Please try again.")
 
 else:
-    # Sidebar Header Logo using fallback-protected HTML rendering
-    st.sidebar.markdown(
-        """
-        <div style="text-align: center; padding-bottom: 15px;">
-            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/f3/Isabel_Leyte.png/240px-Isabel_Leyte.png" 
-                 width="140" 
-                 style="border-radius: 50%; box-shadow: 0px 4px 10px rgba(0,0,0,0.3);"
-                 onerror="this.onerror=null; this.src='https://i.postimg.cc/mD8N0Kpx/Isabel-Leyte.png';">
-        </div>
-    """,
-        unsafe_allow_html=True,
-    )
+    # Sidebar Header Logo using local repository file
+    try:
+        st.sidebar.image("logo.png", use_container_width=True)
+    except Exception:
+        pass
 
     st.title(
         "💊 Pharmacy Inventory & Sales System (Cloud-Backed via Supabase)"
