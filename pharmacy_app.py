@@ -1,7 +1,22 @@
 from datetime import date, datetime
+from PIL import Image
 import pandas as pd
 import psycopg2
 import streamlit as st
+
+# --- LOAD LOCAL LOGO FOR FAVICON / APP ICON ---
+try:
+    app_icon = Image.open("logo.png")
+except Exception:
+    app_icon = "💊"
+
+# --- APP LAYOUT & CONFIG ---
+st.set_page_config(
+    page_title="Pharmacy Inventory & Sales System",
+    page_icon=app_icon,  # Uses your local logo.png reliably as the browser/mobile icon
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 # --- SUPABASE POSTGRES CONNECTION WITH CONNECTION CACHING ---
 
@@ -151,14 +166,6 @@ def init_db():
 
 
 init_db()
-
-# --- APP LAYOUT & CONFIG ---
-st.set_page_config(
-    page_title="Pharmacy Inventory & Sales System",
-    page_icon="logo.png",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
 
 # --- SAFE CSS: HIDE ONLY MAIN MENU AND FOOTER ---
 hide_st_style = """
