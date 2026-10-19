@@ -18,7 +18,6 @@ def get_connection():
     """Retrieves the cached connection or re-establishes if dropped."""
     try:
         conn = get_db_connection()
-        # Test if connection is still alive
         with conn.cursor() as c:
             c.execute("SELECT 1;")
         return conn
@@ -248,7 +247,13 @@ else:
     # --- 2. INVENTORY MANAGEMENT ---
     elif choice == "Inventory Management":
         st.header("📦 Inventory Stock")
-        tab1, tab2 = st.tabs(["View / Search Inventory", "Add New Medicine"])
+        tab1, tab2, tab3 = st.tabs(
+            [
+                "View / Search Inventory",
+                "Add New Medicine",
+                "Edit / Delete Medicine",
+            ]
+        )
 
         with tab1:
             conn = get_connection()
@@ -320,6 +325,102 @@ else:
                         st.error(
                             "Please fill in both Brand Name and Generic Name."
                         )
+
+        with tab3:
+            st.subheader("Edit or Delete Sample Medicine")
+            conn = get_connection()
+            meds_df = pd.read_sql("SELECT * FROM medicines", conn)
+
+            if meds_df.empty:
+                st.info("No medicines currently in inventory.")
+            else:
+                med_dict = {
+                    f"{row['brand_name']} ({row['generic_name']}) - ID: {row['id']}": row
+                    for _, row in meds_df.iterrows()
+                }
+                selected_med_label = st.selectbox(
+                    "Select Medicine to Modify/Delete", list(med_dict.keys())
+                )
+                selected_med = med_dict[selected_med_label]
+
+                with st.form("edit_medicine_form"):
+                    col1, col2 = st.columns(2)
+                    e_brand = col1.text_input(
+                        "Brand Name", value=selected_med["brand_name"]
+                    )
+                    e_generic = col2.text_input(
+                        "Generic Name", value=selected_med["generic_name"]
+                    )
+
+                    cat_col, price_col, qty_col = st.columns(3)
+                    e_category = cat_col.text_input(
+                        "Category", value=selected_med["category"]
+                    )
+                    e_price = price_col.number_input(
+                        "Unit Price (₱)",
+                        min_value=0.0,
+                        value=float(selected_med["unit_price"]),
+                        step=0.5,
+                    )
+                    e_qty = qty_col.number_input(
+                        "Stock Quantity",
+                        min_value=0,
+                        value=int(selected_med["stock_qty"]),
+                        step=1,
+                    )
+
+                    update_med_btn = st.form_submit_button(
+                        "Save Changes to Medicine"
+                    )
+
+                if update_med_btn:
+                    conn = get_connection()
+                    c = conn.cursor()
+                    c.execute(
+                        """
+                        UPDATE medicines 
+                        SET brand_name=%s, generic_name=%s, category=%s, unit_price=%s, stock_qty=%s 
+                        WHERE id=%s
+                    """,
+                        (
+                            e_brand,
+                            e_generic,
+                            e_category,
+                            e_price,
+                            e_qty,
+                            int(selected_med["id"]),
+                        ),
+                    )
+                    conn.commit()
+                    c.close()
+                    st.success(f"Updated record for '{e_brand}'!")
+                    st.rerun()
+
+                st.divider()
+                st.subheader("🗑️ Delete Record")
+                confirm_del_med = st.checkbox(
+                    "I want to permanently delete this medicine from inventory",
+                    key="del_med_check",
+                )
+                if st.button("Delete Selected Medicine", type="primary"):
+                    if not confirm_del_med:
+                        st.warning(
+                            "Please check the confirmation box above to proceed with deletion."
+                        )
+                    else:
+                        conn = get_connection()
+                        c = conn.cursor()
+                        # Optional: delete dependent sales/deliveries first or clear reference if needed
+                        c.execute(
+                            "DELETE FROM medicines WHERE id = %s",
+                            (int(selected_med["id"]),),
+                        )
+                        conn.commit()
+                        c.close()
+                        st.success(
+                            f"Deleted '{selected_med['brand_name']}' from inventory!"
+                        )
+                        st.rerun()
 
     # --- 3. POINT OF SALE ---
     elif choice == "POS / Record Sale":
