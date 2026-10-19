@@ -1,7 +1,8 @@
+import os
 import sqlite3
+from datetime import date, datetime
 import pandas as pd
 import streamlit as st
-from datetime import date, datetime
 
 # --- DATABASE SETUP ---
 DB_FILE = "pharmacy_inventory.db"
@@ -84,6 +85,18 @@ menu = [
     "Sales History",
 ]
 choice = st.sidebar.selectbox("Navigation Menu", menu)
+
+# --- SIDEBAR BACKUP TOOL ---
+st.sidebar.divider()
+st.sidebar.subheader("💾 Database Backup")
+if os.path.exists(DB_FILE):
+    with open(DB_FILE, "rb") as f:
+        st.sidebar.download_button(
+            label="Download Database Backup",
+            data=f,
+            file_name="pharmacy_inventory_backup.db",
+            mime="application/octet-stream",
+        )
 
 # --- 1. DASHBOARD ---
 if choice == "Dashboard":
@@ -227,7 +240,6 @@ elif choice == "POS / Record Sale":
             "No available stock in inventory. Please add stock or record a delivery first."
         )
     else:
-        # Create select options
         med_dict = {
             f"{row['brand_name']} ({row['generic_name']}) - Stock: {row['stock_qty']} | Price: ₱{row['unit_price']:.2f}": row
             for _, row in medicines.iterrows()
@@ -288,13 +300,17 @@ elif choice == "Deliveries":
     st.header("🚚 Incoming Deliveries")
 
     conn = get_connection()
-    medicines = pd.read_sql_query("SELECT id, brand_name, generic_name FROM medicines", conn)
+    medicines = pd.read_sql_query(
+        "SELECT id, brand_name, generic_name FROM medicines", conn
+    )
     conn.close()
 
     st.subheader("Log Delivery Shipment")
 
     if medicines.empty:
-        st.info("Please add medicines to your master list in 'Inventory Management' first.")
+        st.info(
+            "Please add medicines to your master list in 'Inventory Management' first."
+        )
     else:
         med_dict = {
             f"{row['brand_name']} ({row['generic_name']})": row["id"]
@@ -306,8 +322,12 @@ elif choice == "Deliveries":
             supplier = st.text_input("Supplier Name")
             del_date = st.date_input("Delivery Date", value=date.today())
 
-            selected_item_label = st.selectbox("Select Medicine Received", list(med_dict.keys()))
-            qty_received = st.number_input("Quantity Received", min_value=1, step=1)
+            selected_item_label = st.selectbox(
+                "Select Medicine Received", list(med_dict.keys())
+            )
+            qty_received = st.number_input(
+                "Quantity Received", min_value=1, step=1
+            )
 
             submitted = st.form_submit_button("Record Delivery & Update Stock")
 
@@ -339,7 +359,9 @@ elif choice == "Deliveries":
                 conn.commit()
                 conn.close()
 
-                st.success(f"Successfully added {qty_received} units to inventory!")
+                st.success(
+                    f"Successfully added {qty_received} units to inventory!"
+                )
                 st.rerun()
 
     st.divider()
