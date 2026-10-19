@@ -481,7 +481,13 @@ else:
     # --- 6. USER MANAGEMENT (Admin Only) ---
     elif choice == "User Management":
         st.header("🛡️ Staff User & Role Management")
-        tab1, tab2 = st.tabs(["View Existing Staff", "Create New Staff Account"])
+        tab1, tab2, tab3 = st.tabs(
+            [
+                "View Existing Staff",
+                "Create New Staff Account",
+                "Edit / Delete User",
+            ]
+        )
 
         with tab1:
             conn = get_connection()
@@ -495,9 +501,7 @@ else:
             st.subheader("Add New Staff Login")
             with st.form("new_user_form"):
                 new_username = st.text_input("Username")
-                new_password = st.text_input(
-                    "Password", type="password"
-                )
+                new_password = st.text_input("Password", type="password")
                 new_name = st.text_input("Staff Full Name / Label")
                 new_role = st.selectbox(
                     "Assigned Role",
@@ -542,3 +546,108 @@ else:
                             )
                     else:
                         st.error("Please fill in all fields.")
+
+        with tab3:
+            st.subheader("Edit or Delete Staff Account")
+            conn = get_connection()
+            users_df = pd.read_sql(
+                "SELECT id, username, role, name FROM app_users", conn
+            )
+            conn.close()
+
+            if users_df.empty:
+                st.info("No users found.")
+            else:
+                user_dict = {
+                    f"{row['name']} ({row['username']} - {row['role']})": row
+                    for _, row in users_df.iterrows()
+                }
+                selected_user_label = st.selectbox(
+                    "Select User to Manage",
+                    list(user_dict.keys()),
+                    key="edit_user_selectbox",
+                )
+                selected_user = user_dict[selected_user_label]
+
+                with st.form("edit_user_form"):
+                    e_name = st.text_input(
+                        "Staff Full Name / Label", value=selected_user["name"]
+                    )
+                    role_options = [
+                        "Administrator",
+                        "Management Viewer",
+                        "Cashier / Sales",
+                        "Inventory Custodian",
+                        "Delivery Custodian",
+                    ]
+                    current_role_idx = (
+                        role_options.index(selected_user["role"])
+                        if selected_user["role"] in role_options
+                        else 0
+                    )
+                    e_role = st.selectbox(
+                        "Assigned Role",
+                        role_options,
+                        index=current_role_idx,
+                    )
+                    e_password = st.text_input(
+                        "New Password (leave blank to keep current)",
+                        type="password",
+                    )
+
+                    update_btn = st.form_submit_button("Update User Details")
+
+                if update_btn:
+                    conn = get_connection()
+                    c = conn.cursor()
+                    if e_password:
+                        c.execute(
+                            "UPDATE app_users SET name = %s, role = %s, password = %s WHERE id = %s",
+                            (
+                                e_name,
+                                e_role,
+                                e_password,
+                                int(selected_user["id"]),
+                            ),
+                        )
+                    else:
+                        c.execute(
+                            "UPDATE app_users SET name = %s, role = %s WHERE id = %s",
+                            (e_name, e_role, int(selected_user["id"])),
+                        )
+                    conn.commit()
+                    c.close()
+                    conn.close()
+                    st.success(
+                        f"Successfully updated user '{selected_user['username']}'!"
+                    )
+                    st.rerun()
+
+                st.divider()
+                st.subheader("⚠️ Danger Zone")
+                confirm_delete = st.checkbox(
+                    "I want to delete this user account", key="confirm_del_user"
+                )
+                if st.button("Delete Selected User", type="primary"):
+                    if selected_user["username"] == "admin":
+                        st.error(
+                            "You cannot delete the primary admin account!"
+                        )
+                    elif not confirm_delete:
+                        st.warning(
+                            "Please check the confirmation box above to delete."
+                        )
+                    else:
+                        conn = get_connection()
+                        c = conn.cursor()
+                        c.execute(
+                            "DELETE FROM app_users WHERE id = %s",
+                            (int(selected_user["id"]),),
+                        )
+                        conn.commit()
+                        c.close()
+                        conn.close()
+                        st.success(
+                            f"User '{selected_user['username']}' has been deleted."
+                        )
+                        st.rerun()
