@@ -3,13 +3,28 @@ import pandas as pd
 import psycopg2
 import streamlit as st
 
-# --- SUPABASE POSTGRES CONNECTION SETUP ---
+# --- SUPABASE POSTGRES CONNECTION WITH CONNECTION CACHING ---
 
 
-def get_connection():
+@st.cache_resource
+def get_db_connection():
+    """Cache the database connection pool so it stays warm across re-runs."""
     db_url = st.secrets["postgres"]["url"]
     conn = psycopg2.connect(db_url, sslmode="require")
     return conn
+
+
+def get_connection():
+    """Retrieves the cached connection or re-establishes if dropped."""
+    try:
+        conn = get_db_connection()
+        # Test if connection is still alive
+        with conn.cursor() as c:
+            c.execute("SELECT 1;")
+        return conn
+    except Exception:
+        st.cache_resource.clear()
+        return get_db_connection()
 
 
 def init_db():
@@ -90,7 +105,6 @@ def init_db():
 
     conn.commit()
     c.close()
-    conn.close()
 
 
 init_db()
@@ -125,7 +139,6 @@ if not st.session_state["logged_in"]:
             )
             user_record = c.fetchone()
             c.close()
-            conn.close()
 
             if user_record and user_record[0] == password_input:
                 st.session_state["logged_in"] = True
@@ -199,7 +212,6 @@ else:
             conn,
         ).iloc[0]["total"]
         today_sales = today_sales if today_sales else 0.0
-        conn.close()
 
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Unique Items", total_products)
@@ -229,7 +241,6 @@ else:
         with tab1:
             conn = get_connection()
             inventory_df = pd.read_sql("SELECT * FROM medicines", conn)
-            conn.close()
 
             search = st.text_input(
                 "🔍 Search Medicine (Brand, Generic, or Category)"
@@ -291,7 +302,6 @@ else:
                         )
                         conn.commit()
                         c.close()
-                        conn.close()
                         st.success(f"Added '{brand_name}' to inventory.")
                         st.rerun()
                     else:
@@ -308,7 +318,6 @@ else:
             "SELECT id, brand_name, generic_name, unit_price, stock_qty FROM medicines WHERE stock_qty > 0",
             conn,
         )
-        conn.close()
 
         if medicines.empty:
             st.warning(
@@ -364,7 +373,6 @@ else:
 
                 conn.commit()
                 c.close()
-                conn.close()
 
                 st.success(
                     f"Sold {qty} unit(s) of {selected_item['brand_name']} for ₱{total:,.2f}."
@@ -379,7 +387,6 @@ else:
         medicines = pd.read_sql(
             "SELECT id, brand_name, generic_name FROM medicines", conn
         )
-        conn.close()
 
         st.subheader("Log Delivery Shipment")
 
@@ -439,7 +446,6 @@ else:
 
                     conn.commit()
                     c.close()
-                    conn.close()
 
                     st.success(
                         f"Successfully added {qty_received} units to inventory!"
@@ -458,7 +464,6 @@ else:
         """,
             conn,
         )
-        conn.close()
         st.dataframe(deliveries_df, use_container_width=True)
 
     # --- 5. SALES HISTORY ---
@@ -469,7 +474,6 @@ else:
         sales_df = pd.read_sql(
             "SELECT * FROM sales ORDER BY timestamp DESC", conn
         )
-        conn.close()
 
         if not sales_df.empty:
             total_rev = sales_df["total_price"].sum()
@@ -494,7 +498,6 @@ else:
             users_df = pd.read_sql(
                 "SELECT id, username, role, name FROM app_users", conn
             )
-            conn.close()
             st.dataframe(users_df, use_container_width=True)
 
         with tab2:
@@ -535,7 +538,6 @@ else:
                             )
                             conn.commit()
                             c.close()
-                            conn.close()
                             st.success(
                                 f"Successfully created account for '{new_name}' with role '{new_role}'!"
                             )
@@ -553,7 +555,6 @@ else:
             users_df = pd.read_sql(
                 "SELECT id, username, role, name FROM app_users", conn
             )
-            conn.close()
 
             if users_df.empty:
                 st.info("No users found.")
@@ -617,7 +618,6 @@ else:
                         )
                     conn.commit()
                     c.close()
-                    conn.close()
                     st.success(
                         f"Successfully updated user '{selected_user['username']}'!"
                     )
@@ -646,7 +646,6 @@ else:
                         )
                         conn.commit()
                         c.close()
-                        conn.close()
                         st.success(
                             f"User '{selected_user['username']}' has been deleted."
                         )
