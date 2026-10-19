@@ -1,6 +1,6 @@
 from datetime import date, datetime
 import pandas as pd
-import pymysql
+import psycopg2
 import streamlit as st
 
 # --- USER ACCOUNTS & ROLES CONFIGURATION ---
@@ -32,20 +32,12 @@ USERS = {
     },
 }
 
-# --- MYSQL CONNECTION SETUP ---
+# --- SUPABASE POSTGRES CONNECTION SETUP ---
 
 
 def get_connection():
-    # Connects to MySQL using Streamlit secrets
-    db_config = st.secrets["mysql"]
-    conn = pymysql.connect(
-        host=db_config["host"],
-        user=db_config["user"],
-        password=db_config["password"],
-        database=db_config["database"],
-        port=int(db_config.get("port", 3306)),
-        cursorclass=pymysql.cursors.DictCursor,
-    )
+    db_url = st.secrets["postgres"]["url"]
+    conn = psycopg2.connect(db_url)
     return conn
 
 
@@ -57,11 +49,11 @@ def init_db():
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS medicines (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+            id SERIAL PRIMARY KEY,
             brand_name VARCHAR(255) NOT NULL,
             generic_name VARCHAR(255) NOT NULL,
             category VARCHAR(100),
-            unit_price DECIMAL(10,2) NOT NULL,
+            unit_price NUMERIC(10,2) NOT NULL,
             stock_qty INT NOT NULL,
             min_threshold INT DEFAULT 10,
             expiry_date DATE
@@ -73,13 +65,13 @@ def init_db():
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS sales (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+            id SERIAL PRIMARY KEY,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             medicine_id INT,
             medicine_name VARCHAR(255),
             qty_sold INT,
-            unit_price DECIMAL(10,2),
-            total_price DECIMAL(10,2),
+            unit_price NUMERIC(10,2),
+            total_price NUMERIC(10,2),
             FOREIGN KEY (medicine_id) REFERENCES medicines(id)
         )
     """
@@ -89,7 +81,7 @@ def init_db():
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS deliveries (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+            id SERIAL PRIMARY KEY,
             delivery_date DATE,
             dr_number VARCHAR(100),
             supplier VARCHAR(255),
@@ -101,6 +93,7 @@ def init_db():
     )
 
     conn.commit()
+    c.close()
     conn.close()
 
 
@@ -153,7 +146,9 @@ if not st.session_state["logged_in"]:
         )
 
 else:
-    st.title("💊 Pharmacy Inventory & Sales System (MySQL Connected)")
+    st.title(
+        "💊 Pharmacy Inventory & Sales System (Cloud-Backed via Supabase)"
+    )
 
     st.sidebar.markdown(f"👤 **Logged in as:** {st.session_state['name']}")
     st.sidebar.markdown(f"🛡️ **Role:** `{st.session_state['role']}`")
@@ -200,14 +195,14 @@ else:
             conn,
         )
         expiring_df = pd.read_sql(
-            "SELECT brand_name, generic_name, stock_qty, expiry_date FROM medicines WHERE expiry_date <= DATE_ADD(CURDATE(), INTERVAL 60 DAY) AND expiry_date >= CURDATE()",
+            "SELECT brand_name, generic_name, stock_qty, expiry_date FROM medicines WHERE expiry_date <= CURRENT_DATE + INTERVAL '60 days' AND expiry_date >= CURRENT_DATE",
             conn,
         )
         total_products = pd.read_sql(
             "SELECT COUNT(*) as count FROM medicines", conn
         ).iloc[0]["count"]
         today_sales = pd.read_sql(
-            "SELECT SUM(total_price) as total FROM sales WHERE DATE(timestamp) = CURDATE()",
+            "SELECT SUM(total_price) as total FROM sales WHERE DATE(timestamp) = CURRENT_DATE",
             conn,
         ).iloc[0]["total"]
         today_sales = today_sales if today_sales else 0.0
@@ -285,23 +280,24 @@ else:
                 if submitted:
                     if brand_name and generic_name:
                         conn = get_connection()
-                        with conn.cursor() as cursor:
-                            cursor.execute(
-                                """
-                                INSERT INTO medicines (brand_name, generic_name, category, unit_price, stock_qty, min_threshold, expiry_date)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                            """,
-                                (
-                                    brand_name,
-                                    generic_name,
-                                    category,
-                                    unit_price,
-                                    initial_stock,
-                                    min_thresh,
-                                    expiry,
-                                ),
-                            )
-                            conn.commit()
+                        c = conn.cursor()
+                        c.execute(
+                            """
+                            INSERT INTO medicines (brand_name, generic_name, category, unit_price, stock_qty, min_threshold, expiry_date)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """,
+                            (
+                                brand_name,
+                                generic_name,
+                                category,
+                                unit_price,
+                                initial_stock,
+                                min_thresh,
+                                expiry,
+                            ),
+                        )
+                        conn.commit()
+                        c.close()
                         conn.close()
                         st.success(f"Added '{brand_name}' to inventory.")
                         st.rerun()
@@ -348,30 +344,33 @@ else:
 
             if st.button("Complete Transaction"):
                 conn = get_connection()
-                with conn.cursor() as cursor:
-                    cursor.execute(
-                        """
-                        INSERT INTO sales (medicine_id, medicine_name, qty_sold, unit_price, total_price)
-                        VALUES (%s, %s, %s, %s, %s)
-                    """,
-                        (
-                            int(selected_item["id"]),
-                            selected_item["brand_name"],
-                            int(qty),
-                            float(selected_item["unit_price"]),
-                            float(total),
-                        ),
-                    )
+                c = conn.cursor()
 
-                    cursor.execute(
-                        """
-                        UPDATE medicines 
-                        SET stock_qty = stock_qty - %s 
-                        WHERE id = %s
-                    """,
-                        (int(qty), int(selected_item["id"])),
-                    )
-                    conn.commit()
+                c.execute(
+                    """
+                    INSERT INTO sales (medicine_id, medicine_name, qty_sold, unit_price, total_price)
+                    VALUES (%s, %s, %s, %s, %s)
+                """,
+                    (
+                        int(selected_item["id"]),
+                        selected_item["brand_name"],
+                        int(qty),
+                        float(selected_item["unit_price"]),
+                        float(total),
+                    ),
+                )
+
+                c.execute(
+                    """
+                    UPDATE medicines 
+                    SET stock_qty = stock_qty - %s 
+                    WHERE id = %s
+                """,
+                    (int(qty), int(selected_item["id"])),
+                )
+
+                conn.commit()
+                c.close()
                 conn.close()
 
                 st.success(
@@ -420,12 +419,13 @@ else:
                 if submitted:
                     med_id = med_dict[selected_item_label]
                     conn = get_connection()
-                    with conn.cursor() as cursor:
-                        cursor.execute(
-                            """
-                            INSERT INTO deliveries (delivery_date, dr_number, supplier, medicine_id, qty_received)
-                            VALUES (%s, %s, %s, %s, %s)
-                        """,
+                    c = conn.cursor()
+
+                    c.execute(
+                        """
+                        INSERT INTO deliveries (delivery_date, dr_number, supplier, medicine_id, qty_received)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """,
                         (
                             del_date,
                             dr_number,
@@ -435,15 +435,17 @@ else:
                         ),
                     )
 
-                        cursor.execute(
-                            """
-                            UPDATE medicines 
-                            SET stock_qty = stock_qty + %s 
-                            WHERE id = %s
-                        """,
-                            (int(qty_received), int(med_id)),
-                        )
-                        conn.commit()
+                    c.execute(
+                        """
+                        UPDATE medicines 
+                        SET stock_qty = stock_qty + %s 
+                        WHERE id = %s
+                    """,
+                        (int(qty_received), int(med_id)),
+                    )
+
+                    conn.commit()
+                    c.close()
                     conn.close()
 
                     st.success(
