@@ -157,13 +157,14 @@ st.set_page_config(
     page_title="Pharmacy Inventory & Sales System", layout="wide"
 )
 
-# --- HIDE TOP BAR TOOLS BUT KEEP SIDEBAR TOGGLE ---
+# --- KEEP SIDEBAR TOGGLE VISIBLE & HIDE UNNECESSARY TOOLS ---
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
             [data-testid="stToolbar"] {display: none;}
             header {background: transparent;}
+            [data-testid="collapsedControl"] {display: block !important; visibility: visible !important; opacity: 1 !important;}
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
