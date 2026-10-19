@@ -52,7 +52,7 @@ def init_db():
     conn = get_connection()
     c = conn.cursor()
 
-    # Medicines Table (with soft delete flag)
+    # Medicines Table
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS medicines (
@@ -67,6 +67,10 @@ def init_db():
             is_active BOOLEAN DEFAULT TRUE
         )
     """
+    )
+    # Ensure column exists if table was previously created
+    c.execute(
+        "ALTER TABLE medicines ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;"
     )
 
     # Sales Table
@@ -112,6 +116,10 @@ def init_db():
             is_active BOOLEAN DEFAULT TRUE
         )
     """
+    )
+    # Ensure column exists if table was previously created
+    c.execute(
+        "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;"
     )
 
     # Immutable Audit Logs Table
