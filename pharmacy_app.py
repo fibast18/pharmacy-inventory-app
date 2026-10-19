@@ -255,6 +255,7 @@ else:
 
     role = st.session_state["role"]
 
+    # --- ROLE-BASED NAVIGATION MENU ---
     if role == "Administrator":
         menu = [
             "Dashboard",
@@ -271,7 +272,7 @@ else:
     elif role == "Cashier / Sales":
         menu = ["POS / Record Sale", "Sales History"]
     elif role == "Inventory Custodian":
-        menu = ["Dashboard", "Inventory Management", "🤖 AI Advisor"]
+        menu = ["Dashboard", "Inventory Management"]
     elif role == "Delivery Custodian":
         menu = ["Deliveries"]
     else:
@@ -906,7 +907,7 @@ else:
         else:
             st.info("No audit logs recorded yet.")
 
-    # --- 8. AI ADVISOR ---
+    # --- 8. AI ADVISOR (Admin and Management Viewer Only) ---
     elif choice == "🤖 AI Advisor":
         st.header("🤖 Pharmacy AI Analyst & Advisor")
         st.markdown(
