@@ -86,9 +86,11 @@ menu = [
 ]
 choice = st.sidebar.selectbox("Navigation Menu", menu)
 
-# --- SIDEBAR BACKUP TOOL ---
+# --- SIDEBAR BACKUP & RESTORE TOOLS ---
 st.sidebar.divider()
-st.sidebar.subheader("💾 Database Backup")
+st.sidebar.subheader("💾 Database Backup & Restore")
+
+# Download Backup Button
 if os.path.exists(DB_FILE):
     with open(DB_FILE, "rb") as f:
         st.sidebar.download_button(
@@ -97,6 +99,23 @@ if os.path.exists(DB_FILE):
             file_name="pharmacy_inventory_backup.db",
             mime="application/octet-stream",
         )
+
+st.sidebar.markdown("---")
+
+# Restore Database Uploader
+uploaded_backup = st.sidebar.file_uploader(
+    "Restore Backup (.db file)", type=["db"]
+)
+if uploaded_backup is not None:
+    if st.sidebar.button("⚠️ Confirm Restore Database"):
+        try:
+            # Overwrite the existing DB file with the uploaded one
+            with open(DB_FILE, "wb") as f:
+                f.write(uploaded_backup.getbuffer())
+            st.sidebar.success("Database restored successfully! Reloading...")
+            st.rerun()
+        except Exception as e:
+            st.sidebar.error(f"Error restoring database: {e}")
 
 # --- 1. DASHBOARD ---
 if choice == "Dashboard":
