@@ -68,7 +68,6 @@ def init_db():
         )
     """
     )
-    # Ensure column exists if table was previously created
     c.execute(
         "ALTER TABLE medicines ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;"
     )
@@ -117,7 +116,6 @@ def init_db():
         )
     """
     )
-    # Ensure column exists if table was previously created
     c.execute(
         "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;"
     )
@@ -253,10 +251,10 @@ else:
 
     choice = st.sidebar.selectbox("Navigation Menu", menu)
 
-    # --- 1. DASHBOARD ---
-    if choice == "Dashboard":
-        st.header("📊 Overview & Alerts")
 
+    # --- FRAGMENT FOR DYNAMIC METRIC UPDATES ---
+    @st.fragment
+    def render_dashboard_metrics():
         conn = get_connection()
         low_stock_df = pd.read_sql(
             "SELECT brand_name, generic_name, stock_qty, min_threshold FROM medicines WHERE stock_qty <= min_threshold AND is_active = TRUE",
@@ -295,6 +293,12 @@ else:
                 st.dataframe(expiring_df, use_container_width=True)
             else:
                 st.info("No items expiring within the next 60 days.")
+
+
+    # --- 1. DASHBOARD ---
+    if choice == "Dashboard":
+        st.header("📊 Overview & Alerts")
+        render_dashboard_metrics()
 
     # --- 2. INVENTORY MANAGEMENT ---
     elif choice == "Inventory Management":
