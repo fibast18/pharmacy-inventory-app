@@ -157,14 +157,13 @@ st.set_page_config(
     page_title="Pharmacy Inventory & Sales System", layout="wide"
 )
 
-# --- HIDE STREAMLIT HEADER, TOOLBAR, & FOOTER UI ---
+# --- HIDE TOP BAR TOOLS BUT KEEP SIDEBAR TOGGLE ---
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
-            header {visibility: hidden;}
             footer {visibility: hidden;}
-            [data-testid="stHeader"] {display: none;}
             [data-testid="stToolbar"] {display: none;}
+            header {background: transparent;}
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
