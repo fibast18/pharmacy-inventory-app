@@ -3,6 +3,9 @@ import pandas as pd
 import psycopg2
 import streamlit as st
 
+# --- LOGO URL (Municipality of Isabel, Leyte) ---
+LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/f/f3/Isabel_Leyte.png"
+
 # --- SUPABASE POSTGRES CONNECTION WITH CONNECTION CACHING ---
 
 
@@ -155,11 +158,12 @@ init_db()
 # --- APP LAYOUT & CONFIG ---
 st.set_page_config(
     page_title="Pharmacy Inventory & Sales System",
+    page_icon=LOGO_URL,  # Sets the Municipality logo as browser tab icon
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# --- SAFE CSS: HIDE ONLY MAIN MENU AND FOOTER (KEEPS SIDEBAR TOGGLE 100% FUNCTIONAL) ---
+# --- SAFE CSS: HIDE ONLY MAIN MENU AND FOOTER ---
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
@@ -176,36 +180,44 @@ if "logged_in" not in st.session_state:
 
 # --- LOGIN SCREEN ---
 if not st.session_state["logged_in"]:
-    st.title("🔐 Pharmacy System Login")
-    st.markdown("Please sign in with your assigned staff credentials.")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.image(LOGO_URL, width=140)
+        st.title("🔐 Pharmacy System Login")
+        st.markdown("Please sign in with your assigned staff credentials.")
 
-    with st.form("login_form"):
-        username_input = st.text_input("Username")
-        password_input = st.text_input("Password", type="password")
-        submit_login = st.form_submit_button("Login")
+        with st.form("login_form"):
+            username_input = st.text_input("Username")
+            password_input = st.text_input("Password", type="password")
+            submit_login = st.form_submit_button("Login")
 
-        if submit_login:
-            conn = get_connection()
-            c = conn.cursor()
-            c.execute(
-                "SELECT password, role, name FROM app_users WHERE username = %s AND is_active = TRUE",
-                (username_input,),
-            )
-            user_record = c.fetchone()
-            c.close()
+            if submit_login:
+                conn = get_connection()
+                c = conn.cursor()
+                c.execute(
+                    "SELECT password, role, name FROM app_users WHERE username = %s AND is_active = TRUE",
+                    (username_input,),
+                )
+                user_record = c.fetchone()
+                c.close()
 
-            if user_record and user_record[0] == password_input:
-                st.session_state["logged_in"] = True
-                st.session_state["username"] = username_input
-                st.session_state["role"] = user_record[1]
-                st.session_state["name"] = user_record[2]
-                log_audit("LOGIN", f"User {username_input} logged into system.")
-                st.success("Login successful! Loading dashboard...")
-                st.rerun()
-            else:
-                st.error("Invalid username or password. Please try again.")
+                if user_record and user_record[0] == password_input:
+                    st.session_state["logged_in"] = True
+                    st.session_state["username"] = username_input
+                    st.session_state["role"] = user_record[1]
+                    st.session_state["name"] = user_record[2]
+                    log_audit(
+                        "LOGIN", f"User {username_input} logged into system."
+                    )
+                    st.success("Login successful! Loading dashboard...")
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password. Please try again.")
 
 else:
+    # Sidebar Branding Logo
+    st.sidebar.image(LOGO_URL, use_container_width=True)
+
     st.title(
         "💊 Pharmacy Inventory & Sales System (Cloud-Backed via Supabase)"
     )
