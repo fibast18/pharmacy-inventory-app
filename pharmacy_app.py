@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from PIL import Image
+import google.generativeai as genai
 import pandas as pd
 import psycopg2
 import streamlit as st
@@ -13,10 +14,14 @@ except Exception:
 # --- APP LAYOUT & CONFIG ---
 st.set_page_config(
     page_title="Pharmacy Inventory & Sales System",
-    page_icon=app_icon,  # Uses your local logo.png reliably as the browser/mobile icon
+    page_icon=app_icon,
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# --- CONFIGURE GEMINI API FOR AI ADVISOR (VIA STREAMLIT SECRETS) ---
+if "gemini" in st.secrets and "api_key" in st.secrets["gemini"]:
+    genai.configure(api_key=st.secrets["gemini"]["api_key"])
 
 # --- SUPABASE POSTGRES CONNECTION WITH CONNECTION CACHING ---
 
@@ -259,13 +264,14 @@ else:
             "Sales History",
             "User Management",
             "Audit Trail Logs",
+            "🤖 AI Advisor",
         ]
     elif role == "Management Viewer":
-        menu = ["Dashboard", "Sales History"]
+        menu = ["Dashboard", "Sales History", "🤖 AI Advisor"]
     elif role == "Cashier / Sales":
         menu = ["POS / Record Sale", "Sales History"]
     elif role == "Inventory Custodian":
-        menu = ["Dashboard", "Inventory Management"]
+        menu = ["Dashboard", "Inventory Management", "🤖 AI Advisor"]
     elif role == "Delivery Custodian":
         menu = ["Deliveries"]
     else:
@@ -899,3 +905,80 @@ else:
             st.dataframe(audit_df, use_container_width=True)
         else:
             st.info("No audit logs recorded yet.")
+
+    # --- 8. AI ADVISOR ---
+    elif choice == "🤖 AI Advisor":
+        st.header("🤖 Pharmacy AI Analyst & Advisor")
+        st.markdown(
+            "Ask questions about your live inventory, sales performance, low stock warnings, or audit trails. The AI answers **strictly** based on your database."
+        )
+
+        conn = get_connection()
+        df_meds = pd.read_sql(
+            "SELECT brand_name, generic_name, category, unit_price, stock_qty, min_threshold, expiry_date FROM medicines WHERE is_active = TRUE",
+            conn,
+        )
+        df_sales = pd.read_sql(
+            "SELECT timestamp, medicine_name, qty_sold, total_price FROM sales ORDER BY timestamp DESC LIMIT 50",
+            conn,
+        )
+        df_low = pd.read_sql(
+            "SELECT brand_name, stock_qty, min_threshold FROM medicines WHERE stock_qty <= min_threshold AND is_active = TRUE",
+            conn,
+        )
+
+        system_context = f"""
+        You are the official AI Pharmacy Analyst and Advisor for the Municipality of Isabel Pharmacy System. 
+        You must answer user questions using ONLY the following live database records. Do not assume or fabricate any outside facts. If the answer is not present in the data, state that clearly.
+
+        --- LIVE INVENTORY ---
+        {df_meds.to_string(index=False) if not df_meds.empty else "No inventory records."}
+
+        --- RECENT SALES (Last 50 transactions) ---
+        {df_sales.to_string(index=False) if not df_sales.empty else "No sales records yet."}
+
+        --- LOW STOCK ALERTS ---
+        {df_low.to_string(index=False) if not df_low.empty else "All items are well-stocked."}
+        """
+
+        if "ai_messages" not in st.session_state:
+            st.session_state["ai_messages"] = [
+                {
+                    "role": "assistant",
+                    "content": "Hello Boss! I am connected to your Supabase database. Ask me anything about your stock levels, sales reports, or low-stock warnings.",
+                }
+            ]
+
+        for msg in st.session_state["ai_messages"]:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        if user_prompt := st.chat_input(
+            "Ask AI about your inventory, sales, or stock..."
+        ):
+            st.session_state["ai_messages"].append(
+                {"role": "user", "content": user_prompt}
+            )
+            with st.chat_message("user"):
+                st.markdown(user_prompt)
+
+            with st.chat_message("assistant"):
+                with st.spinner("Analyzing system database..."):
+                    try:
+                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        full_prompt = (
+                            f"{system_context}\n\nUser Question: {user_prompt}"
+                        )
+                        response = model.generate_content(full_prompt)
+                        ai_reply = response.text
+
+                        st.markdown(ai_reply)
+                        st.session_state["ai_messages"].append(
+                            {"role": "assistant", "content": ai_reply}
+                        )
+                    except Exception as e:
+                        error_msg = f"AI Error: Could not connect to Gemini API. Please check your API key in secrets. ({e})"
+                        st.error(error_msg)
+                        st.session_state["ai_messages"].append(
+                            {"role": "assistant", "content": error_msg}
+                        )
