@@ -152,20 +152,12 @@ def init_db():
 
 init_db()
 
-# --- APP LAYOUT & CONFIG ---
+# --- APP LAYOUT & CONFIG (FORCED EXPANDED SIDEBAR) ---
 st.set_page_config(
-    page_title="Pharmacy Inventory & Sales System", layout="wide"
+    page_title="Pharmacy Inventory & Sales System",
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
-
-# --- HIDE ONLY THE UPPER-RIGHT TOOLBAR & MENU (KEEP SIDEBAR SAFE) ---
-hide_st_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            [data-testid="stToolbar"] {display: none;}
-            </style>
-            """
-st.markdown(hide_st_style, unsafe_allow_html=True)
 
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
