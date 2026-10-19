@@ -26,11 +26,33 @@ def get_connection():
         return get_db_connection()
 
 
+def log_audit(action, details):
+    """Permanently record an action into the immutable audit trail."""
+    try:
+        conn = get_connection()
+        with conn.cursor() as c:
+            c.execute(
+                """
+                INSERT INTO audit_logs (username, role, action, details)
+                VALUES (%s, %s, %s, %s)
+            """,
+                (
+                    st.session_state.get("username", "system"),
+                    st.session_state.get("role", "system"),
+                    action,
+                    details,
+                ),
+            )
+            conn.commit()
+    except Exception as e:
+        print(f"Audit Log Error: {e}")
+
+
 def init_db():
     conn = get_connection()
     c = conn.cursor()
 
-    # Medicines Table
+    # Medicines Table (with soft delete flag)
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS medicines (
@@ -41,7 +63,8 @@ def init_db():
             unit_price NUMERIC(10,2) NOT NULL,
             stock_qty INT NOT NULL,
             min_threshold INT DEFAULT 10,
-            expiry_date DATE
+            expiry_date DATE,
+            is_active BOOLEAN DEFAULT TRUE
         )
     """
     )
@@ -85,7 +108,22 @@ def init_db():
             username VARCHAR(100) UNIQUE NOT NULL,
             password VARCHAR(255) NOT NULL,
             role VARCHAR(100) NOT NULL,
-            name VARCHAR(255) NOT NULL
+            name VARCHAR(255) NOT NULL,
+            is_active BOOLEAN DEFAULT TRUE
+        )
+    """
+    )
+
+    # Immutable Audit Logs Table
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id SERIAL PRIMARY KEY,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            username VARCHAR(100),
+            role VARCHAR(100),
+            action VARCHAR(255),
+            details TEXT
         )
     """
     )
@@ -145,7 +183,7 @@ if not st.session_state["logged_in"]:
             conn = get_connection()
             c = conn.cursor()
             c.execute(
-                "SELECT password, role, name FROM app_users WHERE username = %s",
+                "SELECT password, role, name FROM app_users WHERE username = %s AND is_active = TRUE",
                 (username_input,),
             )
             user_record = c.fetchone()
@@ -156,6 +194,7 @@ if not st.session_state["logged_in"]:
                 st.session_state["username"] = username_input
                 st.session_state["role"] = user_record[1]
                 st.session_state["name"] = user_record[2]
+                log_audit("LOGIN", f"User {username_input} logged into system.")
                 st.success("Login successful! Loading dashboard...")
                 st.rerun()
             else:
@@ -170,6 +209,9 @@ else:
     st.sidebar.markdown(f"🛡️ **Role:** `{st.session_state['role']}`")
 
     if st.sidebar.button("Logout"):
+        log_audit(
+            "LOGOUT", f"User {st.session_state['username']} logged out."
+        )
         st.session_state["logged_in"] = False
         st.session_state["username"] = ""
         st.session_state["role"] = ""
@@ -188,6 +230,7 @@ else:
             "Deliveries",
             "Sales History",
             "User Management",
+            "Audit Trail Logs",
         ]
     elif role == "Management Viewer":
         menu = ["Dashboard", "Sales History"]
@@ -208,15 +251,16 @@ else:
 
         conn = get_connection()
         low_stock_df = pd.read_sql(
-            "SELECT brand_name, generic_name, stock_qty, min_threshold FROM medicines WHERE stock_qty <= min_threshold",
+            "SELECT brand_name, generic_name, stock_qty, min_threshold FROM medicines WHERE stock_qty <= min_threshold AND is_active = TRUE",
             conn,
         )
         expiring_df = pd.read_sql(
-            "SELECT brand_name, generic_name, stock_qty, expiry_date FROM medicines WHERE expiry_date <= CURRENT_DATE + INTERVAL '60 days' AND expiry_date >= CURRENT_DATE",
+            "SELECT brand_name, generic_name, stock_qty, expiry_date FROM medicines WHERE expiry_date <= CURRENT_DATE + INTERVAL '60 days' AND expiry_date >= CURRENT_DATE AND is_active = TRUE",
             conn,
         )
         total_products = pd.read_sql(
-            "SELECT COUNT(*) as count FROM medicines", conn
+            "SELECT COUNT(*) as count FROM medicines WHERE is_active = TRUE",
+            conn,
         ).iloc[0]["count"]
         today_sales = pd.read_sql(
             "SELECT SUM(total_price) as total FROM sales WHERE DATE(timestamp) = CURRENT_DATE",
@@ -251,13 +295,16 @@ else:
             [
                 "View / Search Inventory",
                 "Add New Medicine",
-                "Edit / Delete Medicine",
+                "Edit / Archive Medicine",
             ]
         )
 
         with tab1:
             conn = get_connection()
-            inventory_df = pd.read_sql("SELECT * FROM medicines", conn)
+            inventory_df = pd.read_sql(
+                "SELECT id, brand_name, generic_name, category, unit_price, stock_qty, min_threshold, expiry_date FROM medicines WHERE is_active = TRUE",
+                conn,
+            )
 
             search = st.text_input(
                 "🔍 Search Medicine (Brand, Generic, or Category)"
@@ -319,6 +366,10 @@ else:
                         )
                         conn.commit()
                         c.close()
+                        log_audit(
+                            "ADD_MEDICINE",
+                            f"Added {brand_name} ({generic_name}), Qty: {initial_stock}, Price: {unit_price}",
+                        )
                         st.success(f"Added '{brand_name}' to inventory.")
                         st.rerun()
                     else:
@@ -327,19 +378,21 @@ else:
                         )
 
         with tab3:
-            st.subheader("Edit or Delete Sample Medicine")
+            st.subheader("Edit or Archive Medicine")
             conn = get_connection()
-            meds_df = pd.read_sql("SELECT * FROM medicines", conn)
+            meds_df = pd.read_sql(
+                "SELECT * FROM medicines WHERE is_active = TRUE", conn
+            )
 
             if meds_df.empty:
-                st.info("No medicines currently in inventory.")
+                st.info("No active medicines currently in inventory.")
             else:
                 med_dict = {
                     f"{row['brand_name']} ({row['generic_name']}) - ID: {row['id']}": row
                     for _, row in meds_df.iterrows()
                 }
                 selected_med_label = st.selectbox(
-                    "Select Medicine to Modify/Delete", list(med_dict.keys())
+                    "Select Medicine to Modify", list(med_dict.keys())
                 )
                 selected_med = med_dict[selected_med_label]
 
@@ -393,32 +446,39 @@ else:
                     )
                     conn.commit()
                     c.close()
+                    log_audit(
+                        "UPDATE_MEDICINE",
+                        f"Updated medicine ID {selected_med['id']}: Brand={e_brand}, Price={e_price}, Stock={e_qty}",
+                    )
                     st.success(f"Updated record for '{e_brand}'!")
                     st.rerun()
 
                 st.divider()
-                st.subheader("🗑️ Delete Record")
-                confirm_del_med = st.checkbox(
-                    "I want to permanently delete this medicine from inventory",
-                    key="del_med_check",
+                st.subheader("🗄️ Archive / Soft Delete Record")
+                confirm_archive = st.checkbox(
+                    "I want to archive this medicine from active inventory",
+                    key="archive_med_check",
                 )
-                if st.button("Delete Selected Medicine", type="primary"):
-                    if not confirm_del_med:
+                if st.button("Archive Selected Medicine", type="primary"):
+                    if not confirm_archive:
                         st.warning(
-                            "Please check the confirmation box above to proceed with deletion."
+                            "Please check the confirmation box above to proceed."
                         )
                     else:
                         conn = get_connection()
                         c = conn.cursor()
-                        # Optional: delete dependent sales/deliveries first or clear reference if needed
                         c.execute(
-                            "DELETE FROM medicines WHERE id = %s",
+                            "UPDATE medicines SET is_active = FALSE WHERE id = %s",
                             (int(selected_med["id"]),),
                         )
                         conn.commit()
                         c.close()
+                        log_audit(
+                            "ARCHIVE_MEDICINE",
+                            f"Archived medicine: {selected_med['brand_name']} (ID: {selected_med['id']})",
+                        )
                         st.success(
-                            f"Deleted '{selected_med['brand_name']}' from inventory!"
+                            f"Archived '{selected_med['brand_name']}' successfully!"
                         )
                         st.rerun()
 
@@ -428,7 +488,7 @@ else:
 
         conn = get_connection()
         medicines = pd.read_sql(
-            "SELECT id, brand_name, generic_name, unit_price, stock_qty FROM medicines WHERE stock_qty > 0",
+            "SELECT id, brand_name, generic_name, unit_price, stock_qty FROM medicines WHERE stock_qty > 0 AND is_active = TRUE",
             conn,
         )
 
@@ -487,6 +547,10 @@ else:
                 conn.commit()
                 c.close()
 
+                log_audit(
+                    "POS_SALE",
+                    f"Sold {qty} unit(s) of {selected_item['brand_name']} for Total: ₱{total:,.2f}",
+                )
                 st.success(
                     f"Sold {qty} unit(s) of {selected_item['brand_name']} for ₱{total:,.2f}."
                 )
@@ -498,7 +562,8 @@ else:
 
         conn = get_connection()
         medicines = pd.read_sql(
-            "SELECT id, brand_name, generic_name FROM medicines", conn
+            "SELECT id, brand_name, generic_name FROM medicines WHERE is_active = TRUE",
+            conn,
         )
 
         st.subheader("Log Delivery Shipment")
@@ -560,6 +625,10 @@ else:
                     conn.commit()
                     c.close()
 
+                    log_audit(
+                        "DELIVERY_RECEIVED",
+                        f"Received DR# {dr_number} from {supplier}: +{qty_received} units for medicine ID {med_id}",
+                    )
                     st.success(
                         f"Successfully added {qty_received} units to inventory!"
                     )
@@ -602,14 +671,15 @@ else:
             [
                 "View Existing Staff",
                 "Create New Staff Account",
-                "Edit / Delete User",
+                "Edit / Archive User",
             ]
         )
 
         with tab1:
             conn = get_connection()
             users_df = pd.read_sql(
-                "SELECT id, username, role, name FROM app_users", conn
+                "SELECT id, username, role, name FROM app_users WHERE is_active = TRUE",
+                conn,
             )
             st.dataframe(users_df, use_container_width=True)
 
@@ -651,6 +721,10 @@ else:
                             )
                             conn.commit()
                             c.close()
+                            log_audit(
+                                "CREATE_USER",
+                                f"Created staff account '{new_username}' with role '{new_role}'.",
+                            )
                             st.success(
                                 f"Successfully created account for '{new_name}' with role '{new_role}'!"
                             )
@@ -663,14 +737,15 @@ else:
                         st.error("Please fill in all fields.")
 
         with tab3:
-            st.subheader("Edit or Delete Staff Account")
+            st.subheader("Edit or Archive Staff Account")
             conn = get_connection()
             users_df = pd.read_sql(
-                "SELECT id, username, role, name FROM app_users", conn
+                "SELECT id, username, role, name FROM app_users WHERE is_active = TRUE",
+                conn,
             )
 
             if users_df.empty:
-                st.info("No users found.")
+                st.info("No active users found.")
             else:
                 user_dict = {
                     f"{row['name']} ({row['username']} - {row['role']})": row
@@ -731,35 +806,62 @@ else:
                         )
                     conn.commit()
                     c.close()
+                    log_audit(
+                        "UPDATE_USER",
+                        f"Updated user account details for '{selected_user['username']}'.",
+                    )
                     st.success(
                         f"Successfully updated user '{selected_user['username']}'!"
                     )
                     st.rerun()
 
                 st.divider()
-                st.subheader("⚠️ Danger Zone")
+                st.subheader("⚠️ Archive User Account")
                 confirm_delete = st.checkbox(
-                    "I want to delete this user account", key="confirm_del_user"
+                    "I want to archive/disable this user account",
+                    key="confirm_del_user",
                 )
-                if st.button("Delete Selected User", type="primary"):
+                if st.button("Archive Selected User", type="primary"):
                     if selected_user["username"] == "admin":
                         st.error(
-                            "You cannot delete the primary admin account!"
+                            "You cannot archive the primary admin account!"
                         )
                     elif not confirm_delete:
                         st.warning(
-                            "Please check the confirmation box above to delete."
+                            "Please check the confirmation box above to proceed."
                         )
                     else:
                         conn = get_connection()
                         c = conn.cursor()
                         c.execute(
-                            "DELETE FROM app_users WHERE id = %s",
+                            "UPDATE app_users SET is_active = FALSE WHERE id = %s",
                             (int(selected_user["id"]),),
                         )
                         conn.commit()
                         c.close()
+                        log_audit(
+                            "ARCHIVE_USER",
+                            f"Archived user account '{selected_user['username']}'.",
+                        )
                         st.success(
-                            f"User '{selected_user['username']}' has been deleted."
+                            f"User '{selected_user['username']}' has been archived."
                         )
                         st.rerun()
+
+    # --- 7. AUDIT TRAIL LOGS (Admin Only) ---
+    elif choice == "Audit Trail Logs":
+        st.header("📋 Immutable System Audit Trail")
+        st.markdown(
+            "This log records all administrative actions, sales transactions, deliveries, and data changes for compliance and security tracking."
+        )
+
+        conn = get_connection()
+        audit_df = pd.read_sql(
+            "SELECT id, timestamp, username, role, action, details FROM audit_logs ORDER BY timestamp DESC",
+            conn,
+        )
+
+        if not audit_df.empty:
+            st.dataframe(audit_df, use_container_width=True)
+        else:
+            st.info("No audit logs recorded yet.")
