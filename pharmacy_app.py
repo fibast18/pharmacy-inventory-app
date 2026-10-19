@@ -37,10 +37,7 @@ USERS = {
 
 def get_connection():
     db_url = st.secrets["postgres"]["url"]
-    if "sslmode" not in db_url:
-        separator = "&" if "?" in db_url else "?"
-        db_url += f"{separator}sslmode=require"
-    conn = psycopg2.connect(db_url)
+    conn = psycopg2.connect(db_url, sslmode="require")
     return conn
 
 
