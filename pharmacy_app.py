@@ -159,11 +159,12 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# --- SAFE CSS: HIDE ONLY MAIN MENU AND FOOTER (KEEPS SIDEBAR TOGGLE 100% WORKING) ---
+# --- PRECISE CSS: HIDE ONLY TOOLBAR BUTTONS WHILE KEEPING SIDEBAR TOGGLE SAFE ---
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
+            [data-testid="stToolbar"] * {display: none !important;}
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
