@@ -114,6 +114,18 @@ st.set_page_config(
     page_title="Pharmacy Inventory & Sales System", layout="wide"
 )
 
+# --- HIDE STREAMLIT HEADER, TOOLBAR, & FOOTER UI ---
+hide_st_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            header {visibility: hidden;}
+            footer {visibility: hidden;}
+            [data-testid="stHeader"] {display: none;}
+            [data-testid="stToolbar"] {display: none;}
+            </style>
+            """
+st.markdown(hide_st_style, unsafe_allow_html=True)
+
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
     st.session_state["username"] = ""
