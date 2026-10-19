@@ -3,35 +3,6 @@ import pandas as pd
 import psycopg2
 import streamlit as st
 
-# --- USER ACCOUNTS & ROLES CONFIGURATION ---
-USERS = {
-    "admin": {
-        "password": "adminpassword123",
-        "role": "Administrator",
-        "name": "Head Admin",
-    },
-    "manager": {
-        "password": "managerpassword123",
-        "role": "Management Viewer",
-        "name": "Manager",
-    },
-    "cashier1": {
-        "password": "cashierpassword123",
-        "role": "Cashier / Sales",
-        "name": "Store Cashier",
-    },
-    "inventory1": {
-        "password": "invpassword123",
-        "role": "Inventory Custodian",
-        "name": "Stock Clerk",
-    },
-    "delivery1": {
-        "password": "delpassword123",
-        "role": "Delivery Custodian",
-        "name": "Receiving Staff",
-    },
-}
-
 # --- SUPABASE POSTGRES CONNECTION SETUP ---
 
 
@@ -92,6 +63,31 @@ def init_db():
     """
     )
 
+    # Users Table for Dynamic RBAC
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_users (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(100) UNIQUE NOT NULL,
+            password VARCHAR(255) NOT NULL,
+            role VARCHAR(100) NOT NULL,
+            name VARCHAR(255) NOT NULL
+        )
+    """
+    )
+
+    # Seed default admin if no users exist
+    c.execute("SELECT COUNT(*) FROM app_users")
+    count = c.fetchone()[0]
+    if count == 0:
+        c.execute(
+            """
+            INSERT INTO app_users (username, password, role, name)
+            VALUES (%s, %s, %s, %s)
+        """,
+            ("admin", "adminpassword123", "Administrator", "Head Admin"),
+        )
+
     conn.commit()
     c.close()
     conn.close()
@@ -121,29 +117,25 @@ if not st.session_state["logged_in"]:
         submit_login = st.form_submit_button("Login")
 
         if submit_login:
-            if (
-                username_input in USERS
-                and USERS[username_input]["password"] == password_input
-            ):
+            conn = get_connection()
+            c = conn.cursor()
+            c.execute(
+                "SELECT password, role, name FROM app_users WHERE username = %s",
+                (username_input,),
+            )
+            user_record = c.fetchone()
+            c.close()
+            conn.close()
+
+            if user_record and user_record[0] == password_input:
                 st.session_state["logged_in"] = True
                 st.session_state["username"] = username_input
-                st.session_state["role"] = USERS[username_input]["role"]
-                st.session_state["name"] = USERS[username_input]["name"]
+                st.session_state["role"] = user_record[1]
+                st.session_state["name"] = user_record[2]
                 st.success("Login successful! Loading dashboard...")
                 st.rerun()
             else:
                 st.error("Invalid username or password. Please try again.")
-
-    with st.expander("ℹ️ Default Test Accounts"):
-        st.markdown(
-            """
-        * **Administrator:** `admin` / `adminpassword123`
-        * **Management Viewer:** `manager` / `managerpassword123`
-        * **Cashier:** `cashier1` / `cashierpassword123`
-        * **Inventory Custodian:** `inventory1` / `invpassword123`
-        * **Delivery Custodian:** `delivery1` / `delpassword123`
-        """
-        )
 
 else:
     st.title(
@@ -171,6 +163,7 @@ else:
             "POS / Record Sale",
             "Deliveries",
             "Sales History",
+            "User Management",
         ]
     elif role == "Management Viewer":
         menu = ["Dashboard", "Sales History"]
@@ -484,3 +477,68 @@ else:
             st.dataframe(sales_df, use_container_width=True)
         else:
             st.info("No sales transactions recorded yet.")
+
+    # --- 6. USER MANAGEMENT (Admin Only) ---
+    elif choice == "User Management":
+        st.header("🛡️ Staff User & Role Management")
+        tab1, tab2 = st.tabs(["View Existing Staff", "Create New Staff Account"])
+
+        with tab1:
+            conn = get_connection()
+            users_df = pd.read_sql(
+                "SELECT id, username, role, name FROM app_users", conn
+            )
+            conn.close()
+            st.dataframe(users_df, use_container_width=True)
+
+        with tab2:
+            st.subheader("Add New Staff Login")
+            with st.form("new_user_form"):
+                new_username = st.text_input("Username")
+                new_password = st.text_input(
+                    "Password", type="password"
+                )
+                new_name = st.text_input("Staff Full Name / Label")
+                new_role = st.selectbox(
+                    "Assigned Role",
+                    [
+                        "Administrator",
+                        "Management Viewer",
+                        "Cashier / Sales",
+                        "Inventory Custodian",
+                        "Delivery Custodian",
+                    ],
+                )
+
+                create_user_btn = st.form_submit_button("Create Account")
+
+                if create_user_btn:
+                    if new_username and new_password and new_name:
+                        try:
+                            conn = get_connection()
+                            c = conn.cursor()
+                            c.execute(
+                                """
+                                INSERT INTO app_users (username, password, role, name)
+                                VALUES (%s, %s, %s, %s)
+                            """,
+                                (
+                                    new_username,
+                                    new_password,
+                                    new_role,
+                                    new_name,
+                                ),
+                            )
+                            conn.commit()
+                            c.close()
+                            conn.close()
+                            st.success(
+                                f"Successfully created account for '{new_name}' with role '{new_role}'!"
+                            )
+                            st.rerun()
+                        except Exception as e:
+                            st.error(
+                                f"Error creating user (Username might already exist): {e}"
+                            )
+                    else:
+                        st.error("Please fill in all fields.")
